@@ -62,16 +62,70 @@ def upload_direcotry_zipped(directory):
     print(response.text)
 
 
+def upload_yaml_direcotry_zipped(directory):
+
+    if '_build' not in os.listdir(directory):
+        raise FileNotFoundError("No '_build' directory")
+    elif not os.path.isdir(os.path.join(directory, '_build')):
+        raise NotADirectoryError("'_build' is not a directory")
+
+    if 'apps.meta' not in os.listdir(directory):
+        raise FileNotFoundError("No 'apps.meta' file")
+    elif not os.path.isfile(os.path.join(directory, 'apps.meta')):
+        raise FileNotFoundError("'apps.meta is not a file")
+
+    build_dir = os.path.join(directory, '_build')
+
+    if 'yaml' not in os.listdir(build_dir):
+        raise FileNotFoundError("No 'yaml' directory")
+    elif not os.path.isdir(os.path.join(build_dir, 'yaml')):
+        raise NotADirectoryError("'yaml' is not a directory")
+
+    yaml_dir = os.path.join(build_dir, 'yaml')
+
+    headers = {
+                'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN'])
+              }
+
+    buffer = BytesIO()
+
+    try:
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Upload apps.meta file
+            zf.write(os.path.join(directory, 'apps.meta'),
+                     os.path.relpath(os.path.join(directory, 'app.meta'), start=directory))
+
+            # Upload 'yaml' dir
+            for root, dirs, files in os.walk(yaml_dir):
+                for name in files:
+                    dest_file_name = os.path.relpath(os.path.join(root, name), start=directory)
+                    zf.write(os.path.join(root, name), dest_file_name)
+    except Exception as e:
+        raise repr(e)
+
+    buffer.seek(0)
+
+    # Check the content of the zip file
+    # with open("../test.zip",'wb') as f:
+    #     f.write(buffer.getvalue())
+
+    files = {'file': buffer.getvalue()}
+    response = requests.put(os.environ['PLUGIN_API'], headers=headers, files=files)
+    buffer.close()
+    print(response.text)
+
+
 def main():
 
-    os.environ['PLUGIN_API'] = 'http://0.0.0.0:8080/api/'
-    os.environ['PLUGIN_TOKEN'] = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkZWZfY291cnNlIiwiaWF0IjoxNTYyODI4MzA0LCJpc3MiOiJzaGVwaGVyZCJ9.MUkoD27P6qZKKMM5juL0e0pZl8OVH6S17N_ZFzC7D0cwOgbcDaAO3S1BauXzhQOneChPs1KEzUxI2dVF-Od_gpN8_IJEnQnk25XmZYecfdoJ5ST-6YonVmUMzKP7UAcvzCFye7mkX7zJ1ADYtda57IUdyaLSPOWnFBSHX5B4XTzzPdVZu1xkRtb17nhA20SUg9gwCOPD6uLU4ml1aOPHBdiMLKz66inI8txPrRK57Gn33m8lVp0WTOOgLV5MkCIpkgVHBl50EHcQFA5KfPet3FBLjpp2I1yThQe_n1Zc6GdnR0v_nqX0JhmmDMOvJ5rhIHZ7B0hEtFy9rKUWOWfcug'
+    #os.environ['PLUGIN_API'] = 'http://0.0.0.0:8080/api/'
+    #os.environ['PLUGIN_TOKEN'] = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkZWZfY291cnNlIiwiaWF0IjoxNTYyODI4MzA0LCJpc3MiOiJzaGVwaGVyZCJ9.MUkoD27P6qZKKMM5juL0e0pZl8OVH6S17N_ZFzC7D0cwOgbcDaAO3S1BauXzhQOneChPs1KEzUxI2dVF-Od_gpN8_IJEnQnk25XmZYecfdoJ5ST-6YonVmUMzKP7UAcvzCFye7mkX7zJ1ADYtda57IUdyaLSPOWnFBSHX5B4XTzzPdVZu1xkRtb17nhA20SUg9gwCOPD6uLU4ml1aOPHBdiMLKz66inI8txPrRK57Gn33m8lVp0WTOOgLV5MkCIpkgVHBl50EHcQFA5KfPet3FBLjpp2I1yThQe_n1Zc6GdnR0v_nqX0JhmmDMOvJ5rhIHZ7B0hEtFy9rKUWOWfcug'
 
-    # if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ:
-    #     print(os.environ['PLUGIN_API'])
-    #     print(os.environ['PLUGIN_TOKEN'])
+    if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ:
+        print(os.environ['PLUGIN_API'])
+        print(os.environ['PLUGIN_TOKEN'])
 
-    upload_direcotry_zipped('/u/71/qinq1/unix/Desktop/my_new_course')
+    upload_yaml_direcotry_zipped(os.getcwd())
+
     # upload_directory_one_by_one('/u/71/qinq1/unix/Desktop/my_new_course')
 
 
