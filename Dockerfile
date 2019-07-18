@@ -6,4 +6,4 @@ ADD api.sh /bin/
 ADD api.py /bin/
 RUN chmod +x /bin/api.sh
 ENTRYPOINT /bin/api.sh
-# CMD ["python", "./api.py"]
+# CMD ["python", "/bin/api.py"]

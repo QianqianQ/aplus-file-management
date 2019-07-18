@@ -124,8 +124,8 @@ def main():
         print(os.environ['PLUGIN_API'])
         print(os.environ['PLUGIN_TOKEN'])
 
-    upload_yaml_direcotry_zipped(os.getcwd())
-
+    # upload_yaml_direcotry_zipped(os.getcwd())
+    upload_direcotry_zipped(os.getcwd())
     # upload_directory_one_by_one('/u/71/qinq1/unix/Desktop/my_new_course')
 
 
