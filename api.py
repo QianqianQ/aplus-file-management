@@ -1,10 +1,13 @@
 import os
+import sys
 import requests
 from io import BytesIO
 import tarfile
-import zipfile
 from datetime import datetime
 import time
+from operator import itemgetter
+from pprint import pprint
+
 
 def read_in_chunks(buffer, chunk_size=1024*1024*4):
     while True:
@@ -12,6 +15,7 @@ def read_in_chunks(buffer, chunk_size=1024*1024*4):
         if not data:
             break
         yield data
+
 
 def iter_read_chunks(buffer, chunk_size=1024*1024*4):
     # Ensure it's an iterator and get the first field
@@ -25,9 +29,24 @@ def iter_read_chunks(buffer, chunk_size=1024*1024*4):
     yield prev, True
 
 
-def upload_yaml_direcotry_tar(directory):
+def compression_buffer(files, rel_path_start):
+    buffer = BytesIO()
+    with tarfile.open(fileobj=buffer, mode='w:gz') as tf:
+        for index, f in enumerate(files):
+            file_name = os.path.relpath(f[0], start=rel_path_start)
+
+            # 1. add method
+            tf.add(f[0], file_name)
+            # 2. addfile method
+            # tf.addfile(tarfile.TarInfo(file_name),open(f[0],'rb'))
+    
+    buffer.seek(0)
+    return buffer    
+
+
+def upload_yaml_directory_tar_1(directory):
     """ Compress the yaml files of a course (in a coures directory) in memory, 
-        and upload the compressed file
+        and upload the compressed file by chunks
     
     Arguments:
         directory {str} -- the path of the course directory
@@ -36,14 +55,13 @@ def upload_yaml_direcotry_tar(directory):
     yaml_dir = os.path.join(directory, '_build', 'yaml')
 
     if not os.path.exists(yaml_dir):
-         raise FileNotFoundError("No '_build/yaml' directory")
+        raise FileNotFoundError("No '_build/yaml' directory")
     elif not os.path.isdir(yaml_dir):
         raise NotADirectoryError("'_build/yaml' is not a directory")
 
     # Add the JWT token to the request headers for the authentication purpose
     headers = {
-                'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN']),
-                # 'Content-Type': 'multipart/form-data'
+                'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN'])
               }
 
     # Create the in-memory file-like object
@@ -57,7 +75,6 @@ def upload_yaml_direcotry_tar(directory):
                     dest_file_name = os.path.relpath(os.path.join(root, name), start=yaml_dir)
                     # Write the file to the in-memory tar
                     tf.add(os.path.join(root, name), dest_file_name)
-            creation_time = tf.tarinfo.mtime
     except:
         raise Exception('Error occurs!')
 
@@ -65,16 +82,15 @@ def upload_yaml_direcotry_tar(directory):
     buffer.seek(0)
 
     # Upload the compressed file by chunks
+    chunk_size = 1024 * 1024 * 4
     index = 0
-    offset = 0
-    chunk_size = 1024*1024*4
-    for chunk, whether_last in iter_read_chunks(buffer,chunk_size=chunk_size):
+    for chunk, whether_last in iter_read_chunks(buffer, chunk_size=chunk_size):
         offset = index + len(chunk)
         headers['Content-Type'] = 'application/octet-stream'
         headers['Chunk-Size'] = str(chunk_size)
         headers['Chunk-Index'] = str(index)
         headers['Chunk-Offset'] = str(offset)
-        if whether_last == True:
+        if whether_last:
             headers['Last-Chunk'] = 'True'
         index = offset
         try:
@@ -84,10 +100,92 @@ def upload_yaml_direcotry_tar(directory):
             raise Exception('Error occurs!')
 
 
+def upload_yaml_direcotry_tar_2(directory):
+    """ The files bigger than 4M is uploaded one by one, 
+        and the smaller files are compressed to around 4M compression files to upload
+    
+    Arguments:
+        directory {str} -- the path of the course directory
+    """
+    # The path of the subdirectory that contains yaml files
+    yaml_dir = os.path.join(directory, '_build', 'yaml')
+    index_yaml = os.path.join(yaml_dir, 'index.yaml')
+    if not os.path.exists(yaml_dir):
+        raise FileNotFoundError("No '_build/yaml' directory")
+    elif not os.path.isdir(yaml_dir):
+        raise NotADirectoryError("'_build/yaml' is not a directory")
+    elif not os.path.exists(index_yaml):
+         raise FileNotFoundError("No '_build/yaml/index.yaml' file")
+
+
+    # # Add the JWT token to the request headers for the authentication purpose
+    headers = {
+                'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN']),
+                # 'Content-Type': 'multipart/form-data'
+              }
+
+    all_files = [os.path.join(basedir, filename) for basedir, dirs, files in os.walk(yaml_dir) for filename in files]
+    # list of tuples of file path and size: ('/Path/to/the.file', 1024)
+    files_and_sizes = [(path, os.path.getsize(path)/(1024*1024.0)) for path in all_files]
+    files_and_sizes.sort(key=itemgetter(1), reverse=True)
+
+    data = {'index_yaml_mtime': os.path.getmtime(index_yaml)} 
+
+    # Post big files one by one
+    big_files = list(filter(lambda x: x[1] >= 4, files_and_sizes))
+    small_files = list(filter(lambda x: x[1] < 4, files_and_sizes))
+    # small_files = [f for f in files_and_sizes if f not in big_files]
+
+    if big_files:
+        for index, f in enumerate(big_files):
+            if index == len(big_files)-1 and not small_files:
+                last_file = True
+            file_name = os.path.relpath(f[0], start=yaml_dir)
+            data['file_name'] = file_name
+            if last_file:
+                data['last_file'] = True
+            r = requests.put(os.environ['PLUGIN_API'], headers=headers, 
+                             data=data, files={'file': open(f[0], 'rb')})
+            if last_file:
+                print(r.text)
+    
+    # Compress small files as one and post it
+   
+    if small_files:
+        data.pop('file_name', None)
+        data['compression_file'] = True
+        # Create the in-memory file-like object
+        buffer = BytesIO()
+    
+        with tarfile.open(fileobj=buffer, mode='w:gz') as tf:
+            for index, f in enumerate(small_files):
+                file_name = os.path.relpath(f[0], start=yaml_dir)
+                
+                # 1. add method
+                tf.add(f[0], file_name)
+                # 2. addfile method
+                # tf.addfile(tarfile.TarInfo(file_name),open(f[0],'rb'))
+
+    
+        buffer.seek(0)
+        print(buffer.getbuffer().nbytes)
+
+        files = {'file': buffer.getvalue()}
+        data['last_file'] = True
+        response = requests.put(os.environ['PLUGIN_API'], headers=headers, data=data, files=files)
+        buffer.close()
+        print(response.text)
+
+
 def main():
 
+    # os.environ['PLUGIN_API'] = 'http://0.0.0.0:8080/api/'
+    # os.environ['PLUGIN_TOKEN'] = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkZWZfY291cnNlIiwiaWF0IjoxNTYyODI4MzA0LCJpc3MiOiJzaGVwaGVyZCJ9.MUkoD27P6qZKKMM5juL0e0pZl8OVH6S17N_ZFzC7D0cwOgbcDaAO3S1BauXzhQOneChPs1KEzUxI2dVF-Od_gpN8_IJEnQnk25XmZYecfdoJ5ST-6YonVmUMzKP7UAcvzCFye7mkX7zJ1ADYtda57IUdyaLSPOWnFBSHX5B4XTzzPdVZu1xkRtb17nhA20SUg9gwCOPD6uLU4ml1aOPHBdiMLKz66inI8txPrRK57Gn33m8lVp0WTOOgLV5MkCIpkgVHBl50EHcQFA5KfPet3FBLjpp2I1yThQe_n1Zc6GdnR0v_nqX0JhmmDMOvJ5rhIHZ7B0hEtFy9rKUWOWfcug'
+
+
     if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ:
-        upload_yaml_direcotry_tar(os.getcwd())
+        # upload_yaml_direcotry_tar_1(os.getcwd())
+        upload_yaml_direcotry_tar_2(os.getcwd())
     else:
         raise ValueError('No API or JWT token provided')
     
