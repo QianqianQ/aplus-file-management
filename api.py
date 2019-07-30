@@ -10,56 +10,7 @@ from pprint import pprint
 from json import loads
 from math import floor
 
-
-def read_in_chunks(buffer, chunk_size=1024*1024.0*4):
-    """Read a buffer in chunks
-    
-    Arguments:
-        buffer -- a BytesIO object
-    
-    Keyword Arguments:
-        chunk_size {float} -- the chunk size of each read (default: {1024*1024*4})
-    """
-    while True:
-        data = buffer.read1(chunk_size)
-        if not data:
-            break
-        yield data
-
-
-def iter_read_chunks(buffer, chunk_size=1024*1024*4):
-    """a iterator of read_in_chunks function
-    
-    Arguments:
-        buffer -- a BytesIO object
-    
-    Keyword Arguments:
-         chunk_size {float} -- the chunk size of each read (default: {1024*1024*4})
-    """
-    # Ensure it's an iterator and get the first field
-    it = iter(read_in_chunks(buffer,chunk_size))
-    prev = next(read_in_chunks(buffer,chunk_size))
-    for item in it:
-        # Lag by one item so I know I'm not at the end
-        yield prev, False
-        prev = item
-    # Last item
-    yield prev, True
-
-
-def compression_buffer(files, rel_path_start):
-    buffer = BytesIO()
-    with tarfile.open(fileobj=buffer, mode='w:gz') as tf:
-        for index, f in enumerate(files):
-            file_name = os.path.relpath(f[0], start=rel_path_start)
-
-            # 1. add method
-            tf.add(f[0], file_name)
-            # 2. addfile method
-            # tf.addfile(tarfile.TarInfo(file_name),open(f[0],'rb'))
-    
-    buffer.seek(0)
-    return buffer    
+from utils import *
 
 
 def upload_yaml_directory_tar_1(directory):
@@ -199,6 +150,23 @@ def upload_yaml_direcotry_tar_2(directory):
         buffer.close()
         print(response.text)
 
+def compress_files_upload(file_list, last_file, rel_path_start, buff_size_threshold, headers, data):
+            
+    buffer = tar_filelist_buffer(file_list, rel_path_start)
+    if len(buffer.getbuffer()) <= buff_size_threshold or len(file_list) == 1: 
+        files = {'file': buffer.getvalue()}
+        if file_list[-1][0] == last_file:
+            data['last_file'] = True
+        response = requests.put(os.environ['PLUGIN_API'], headers=headers, data=data, files=files)
+        buffer.close()
+        print(response.text)
+        if response.json().get('can_upload', ''):
+            raise ValueError(response.json().get('error')) 
+    else:
+        file_sublists = [file_list[0:floor(len(file_list)/2)],file_list[floor(len(file_list)/2):]]
+        for l in file_sublists:
+            compress_files_upload(l, last_file, rel_path_start, buff_size_threshold, headers, data)
+
 
 def upload_yaml_direcotry_tar_3(directory):
     """ The files bigger than 4M is uploaded one by one, 
@@ -303,33 +271,11 @@ def upload_yaml_direcotry_tar_3(directory):
         headers = {
                     'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN'])
                 }
-
-        # Update 'data' param in the request
         data = {'index_yaml_mtime': index_mtime} 
         data['compression_file'] = True
+        last_file = small_files[-1][0]
 
-        # Create the in-memory file-like object
-        buffer = BytesIO()
-        with tarfile.open(fileobj=buffer, mode='w:gz') as tf:
-            for index, f in enumerate(small_files):
-                file_name = os.path.relpath(f[0], start=yaml_dir)
-                
-                # Add the file to the tar file
-                # 1. 'add' method
-                tf.add(f[0], file_name)
-                # 2. 'addfile' method
-                # tf.addfile(tarfile.TarInfo(file_name),open(f[0],'rb'))
-
-        # Change the stream position to the start
-        buffer.seek(0)
-
-        files = {'file': buffer.getvalue()}
-        data['last_file'] = True
-        response = requests.put(os.environ['PLUGIN_API'], headers=headers, data=data, files=files)
-        buffer.close()
-        print(response.text)
-        if response.json().get('can_upload', ''):
-            raise ValueError(response.json().get('error')) 
+        compress_files_upload(small_files, last_file, yaml_dir, 50*1024*1024, headers, data)
 
 
 def main():
