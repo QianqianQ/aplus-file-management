@@ -3,7 +3,7 @@ from operator import itemgetter
 from utils import *
 
 
-def upload_yaml_directory_tar(directory):
+def upload_yaml_directory_tar(directory, upload_url):
     """ The files bigger than 4M is uploaded one by one, 
         and the smaller files are compressed to around 4M compression files to upload
     
@@ -51,11 +51,11 @@ def upload_yaml_directory_tar(directory):
                 # flag of the last configuration file
                 if last_file:
                     data['last_file'] = True
-
-                response = requests.put(os.environ['PLUGIN_API'], headers=headers, 
-                                        data=data, files={'file': open(f[0], 'rb')})
-                if response.json().get('can_upload', ''):
-                    raise ValueError(response.json().get('error'))
+                try:
+                    response = requests.post(upload_url, headers=headers, 
+                                            data=data, files={'file': open(f[0], 'rb')})
+                except:
+                    raise Exception('Error occurs when uploading a file with 4MB < size < 50MB!')
                 if last_file:
                     print(response.text)
             else:
@@ -90,15 +90,13 @@ def upload_yaml_directory_tar(directory):
                         headers['Last-File'] = 'True'
                     index = offset
                     try:
-                        response = requests.put(os.environ['PLUGIN_API'], headers=headers, data=chunk)
-                        if response.json().get('can_upload', ''):
-                            raise ValueError(response.json().get('error')) 
-                        if last_file:
-                            print(response.text)
+                        response = requests.post(upload_url, headers=headers, data=chunk)
                     except:
-                        raise Exception('Error occurs!')
+                        raise Exception('Error occurs when uploading a file bigger than 50 MB!')
 
                 buffer.close()
+                if last_file:
+                        print(response.text)
     
     # Compress small files as one and post it
     if small_files:
@@ -110,13 +108,14 @@ def upload_yaml_directory_tar(directory):
         data['compression_file'] = True
         last_file = small_files[-1][0]
 
-        compress_files_upload(small_files, last_file, yaml_dir, 4*1024*1024, headers, data)
+        compress_files_upload(small_files, last_file, yaml_dir, 4*1024*1024, upload_url, headers, data)
 
 
 def main():
 
-    if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ:
-        upload_yaml_directory_tar(os.getcwd())
+    if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ and 'PLUGIN_COURSE' in os.environ:
+        upload_url = os.environ['PLUGIN_API'] + os.environ['PLUGIN_COURSE'] + '/upload'
+        upload_yaml_directory_tar(os.getcwd(), upload_url)
     else:
         raise ValueError('No API or JWT token provided')
     

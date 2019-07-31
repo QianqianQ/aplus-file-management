@@ -3,6 +3,7 @@ from io import BytesIO
 import tarfile
 import requests
 from math import floor
+from json import loads
 
 
 def read_in_chunks(buffer, chunk_size=1024*1024.0*4):
@@ -66,7 +67,7 @@ def tar_filelist_buffer(files, rel_path_start):
     return buffer
 
 
-def compress_files_upload(file_list, last_file, rel_path_start, buff_size_threshold, headers, data):
+def compress_files_upload(file_list, last_file, rel_path_start, buff_size_threshold, upload_url, headers, data):
     """ Compress a list of files and upload.
         If the buffer of the compression file smaller than buff_size_threshold, uploaded.
         Otherwise the file list will be divided as two subsets.
@@ -76,6 +77,7 @@ def compress_files_upload(file_list, last_file, rel_path_start, buff_size_thresh
     :param last_file: tuples (file_path, file_size), the last file of the complete file list
     :param rel_path_start: str, the start path for relative path of files
     :param buff_size_threshold: float, the threshold of buffer size to determine division action
+    :param upload_url: api url for uploading files
     :param headers: dict, headers of requests
     :param data: dict, data of requests
     """
@@ -84,12 +86,16 @@ def compress_files_upload(file_list, last_file, rel_path_start, buff_size_thresh
         files = {'file': buffer.getvalue()}
         if file_list[-1][0] == last_file:
             data['last_file'] = True
-        response = requests.put(os.environ['PLUGIN_API'], headers=headers, data=data, files=files)
+        try:
+            response = requests.post(upload_url, headers=headers, data=data, files=files)
+        except Exception as e:
+            print('Error occurs when uploading a compression file!')
+            raise Exception('Error occurs when uploading a compression file!')
+        
         buffer.close()
-        print(response.text)
-        if response.json().get('can_upload', ''):
-            raise ValueError(response.json().get('error'))
+        if 'last_file' in data:
+            print(response.text)
     else:
-        file_sublists = [file_list[0:floor(len(file_list) / 2)], file_list[floor(len(file_list) / 2):]]
+        file_sublists = [file_list[0:floor(len(file_list)/2)], file_list[floor(len(file_list)/2):]]
         for l in file_sublists:
             compress_files_upload(l, last_file, rel_path_start, buff_size_threshold, headers, data)
