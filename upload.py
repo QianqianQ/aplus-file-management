@@ -43,7 +43,7 @@ def upload_yaml_directory_tar(directory, upload_url):
             if file_index == len(big_files)-1 and not small_files:
                 last_file = True
 
-            if f[1] <= 50.0:
+            if f[1] <= 50.0:  # if the file <= 50MB, post the file object directly
                 # the modification time of the index.yaml file
                 data = {'index_yaml_mtime': index_mtime} 
                 file_name = os.path.relpath(f[0], start=yaml_dir)
@@ -58,7 +58,8 @@ def upload_yaml_directory_tar(directory, upload_url):
                     raise Exception('Error occurs when uploading a file with 4MB < size < 50MB!')
                 if last_file:
                     print(response.text)
-            else:
+
+            else:  # if the file > 50MB, compress it and then post by chunks
                 # Create the in-memory file-like object
                 buffer = BytesIO()
                 # Compress 'yaml' files
@@ -106,7 +107,7 @@ def upload_yaml_directory_tar(directory, upload_url):
                 }
         data = {'index_yaml_mtime': index_mtime} 
         data['compression_file'] = True
-        last_file = small_files[-1][0]
+        last_file = small_files[-1][0]  # Record the last file
 
         compress_files_upload(small_files, last_file, yaml_dir, 4*1024*1024, upload_url, headers, data)
 

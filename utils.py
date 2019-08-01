@@ -81,8 +81,10 @@ def compress_files_upload(file_list, last_file, rel_path_start, buff_size_thresh
     :param headers: dict, headers of requests
     :param data: dict, data of requests
     """
+    # Generate the buffer of the compression file that contains the files in the file_list
     buffer = tar_filelist_buffer(file_list, rel_path_start)
-    if len(buffer.getbuffer()) <= buff_size_threshold or len(file_list) == 1:
+
+    if len(buffer.getbuffer()) <= buff_size_threshold or len(file_list) == 1:  # post the buffer
         files = {'file': buffer.getvalue()}
         if file_list[-1][0] == last_file:
             data['last_file'] = True
@@ -95,7 +97,7 @@ def compress_files_upload(file_list, last_file, rel_path_start, buff_size_thresh
         buffer.close()
         if 'last_file' in data:
             print(response.text)
-    else:
+    else:  # Divide the file_list as two subsets and call the function for each subset
         file_sublists = [file_list[0:floor(len(file_list)/2)], file_list[floor(len(file_list)/2):]]
         for l in file_sublists:
             compress_files_upload(l, last_file, rel_path_start, buff_size_threshold, headers, data)
