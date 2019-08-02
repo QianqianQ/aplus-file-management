@@ -40,5 +40,6 @@ docker run --rm -it --network="host" \
   -v "$(pwd):/data/:ro" \
   -e PLUGIN_API=http://0.0.0.0:8080/api/ \
   -e PLUGIN_TOKEN=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkZWZfY291cnNlIiwiaWF0IjoxNTYyODI4MzA0LCJpc3MiOiJzaGVw \
+  -e PLUGIN_COURSE=def_course \
   api 
 ```
