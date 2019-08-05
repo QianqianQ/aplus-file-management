@@ -1,44 +1,35 @@
-from operator import itemgetter
-
 from utils import *
 
 
-def upload_yaml_directory_tar(directory, upload_url):
+def upload_yaml_directory_tar(directory):
     """ The files bigger than 4M is uploaded one by one, 
         and the smaller files are compressed to around 4M compression files to upload
     
     Arguments:
         directory {str} -- the path of the course directory
     """
-    # The path of the subdirectory that contains yaml files
-    yaml_dir = os.path.join(directory, '_build', 'yaml')
-    index_yaml = os.path.join(yaml_dir, 'index.yaml')
-    if not os.path.exists(yaml_dir):
-        raise FileNotFoundError("No '_build/yaml' directory")
-    elif not os.path.isdir(yaml_dir):
-        raise NotADirectoryError("'_build/yaml' is not a directory")
-    elif not os.path.exists(index_yaml):
-        raise FileNotFoundError("No '_build/yaml/index.yaml' file")
 
-    all_files = [os.path.join(basedir, filename) for basedir, dirs, files in os.walk(yaml_dir) for filename in files]
-    # list of tuples of file path and size (MB), e.g., ('/Path/to/the.file', 1.0)
-    files_and_sizes = [(path, os.path.getsize(path)/(1024*1024.0)) for path in all_files]
-    files_and_sizes.sort(key=itemgetter(1), reverse=True)
+    upload_url = os.environ['PLUGIN_API'] + os.environ['PLUGIN_COURSE'] + '/upload'
+
+    # The path of the subdirectory that contains yaml files
+    yaml_dir, index_yaml, index_mtime = check_directory(directory)
+
+    files_and_sizes = files_sizes_list(yaml_dir)
 
     # sub listing the files by their size (threshold = 4 MB)
     big_files = list(filter(lambda x: x[1] > 4.0, files_and_sizes))
     small_files = list(filter(lambda x: x[1] <= 4.0, files_and_sizes))
     # small_files = [f for f in files_and_sizes if f not in big_files]
 
-    index_mtime = os.path.getmtime(index_yaml)
+    init_headers = {
+        'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN'])
+    }
 
     # Post big files one by one
     if big_files:
         for file_index, f in enumerate(big_files):
 
-            headers = {
-                'Authorization': 'Bearer {}'.format(os.environ['PLUGIN_TOKEN'])
-              }
+            headers = init_headers
             last_file = False
             if file_index == len(big_files)-1 and not small_files:
                 last_file = True
@@ -53,11 +44,11 @@ def upload_yaml_directory_tar(directory, upload_url):
                     data['last_file'] = True
                 try:
                     response = requests.post(upload_url, headers=headers, 
-                                            data=data, files={'file': open(f[0], 'rb')})
+                                             data=data, files={'file': open(f[0], 'rb')})
+                    if last_file:
+                        print(response.text)
                 except:
                     raise Exception('Error occurs when uploading a file with 4MB < size < 50MB!')
-                if last_file:
-                    print(response.text)
 
             else:  # if the file > 50MB, compress it and then post by chunks
                 # Create the in-memory file-like object
@@ -92,13 +83,13 @@ def upload_yaml_directory_tar(directory, upload_url):
                     index = offset
                     try:
                         response = requests.post(upload_url, headers=headers, data=chunk)
+                        if last_file:
+                            print(response.text)
                     except:
                         raise Exception('Error occurs when uploading a file bigger than 50 MB!')
 
                 buffer.close()
-                if last_file:
-                        print(response.text)
-    
+
     # Compress small files as one and post it
     if small_files:
         # Add the JWT token to the request headers for the authentication purpose
@@ -115,8 +106,7 @@ def upload_yaml_directory_tar(directory, upload_url):
 def main():
 
     if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ and 'PLUGIN_COURSE' in os.environ:
-        upload_url = os.environ['PLUGIN_API'] + os.environ['PLUGIN_COURSE'] + '/upload'
-        upload_yaml_directory_tar(os.getcwd(), upload_url)
+        upload_yaml_directory_tar(os.getcwd())
     else:
         raise ValueError('No API or JWT token provided')
     

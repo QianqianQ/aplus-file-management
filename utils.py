@@ -1,9 +1,43 @@
 import os
+import sys
 from io import BytesIO
 import tarfile
 import requests
 from math import floor
-from json import loads
+from operator import itemgetter
+
+
+def check_directory(directory):
+    """ Check whether the yaml direcotry and index.yaml file exist
+    :param directory: str, the path of a course directory
+    :return: the path of the yaml directory, the path of the index.yaml file
+             and the modification time of the index.yaml
+    """
+
+    # The path of the subdirectory that contains yaml files
+    yaml_dir = os.path.join(directory, '_build', 'yaml')
+    index_yaml = os.path.join(yaml_dir, 'index.yaml')
+    if not os.path.exists(yaml_dir):
+        raise FileNotFoundError("No '_build/yaml' directory")
+    elif not os.path.isdir(yaml_dir):
+        raise NotADirectoryError("'_build/yaml' is not a directory")
+    elif not os.path.exists(index_yaml):
+        raise FileNotFoundError("No '_build/yaml/index.yaml' file")
+
+    index_mtime = os.path.getmtime(index_yaml)
+
+    return yaml_dir, index_yaml, index_mtime
+
+
+def files_sizes_list(directory):
+    """ Get a list of tuples of file path and size in a directory, sorted by the file size (largest to smallest)
+    """
+    all_files = [os.path.join(basedir, filename) for basedir, dirs, files in os.walk(directory) for filename in files]
+    # list of tuples of file path and size (MB), e.g., ('/Path/to/the.file', 1.0)
+    files_and_sizes = [(path, os.path.getsize(path) / (1024 * 1024.0)) for path in all_files]
+    files_and_sizes.sort(key=itemgetter(1), reverse=True)
+
+    return files_and_sizes
 
 
 def read_in_chunks(buffer, chunk_size=1024*1024.0*4):
@@ -90,14 +124,20 @@ def compress_files_upload(file_list, last_file, rel_path_start, buff_size_thresh
             data['last_file'] = True
         try:
             response = requests.post(upload_url, headers=headers, data=data, files=files)
+            if 'last_file' in data:
+                print(response.text)
         except Exception as e:
             print('Error occurs when uploading a compression file!')
             raise Exception('Error occurs when uploading a compression file!')
-        
         buffer.close()
-        if 'last_file' in data:
-            print(response.text)
+
     else:  # Divide the file_list as two subsets and call the function for each subset
         file_sublists = [file_list[0:floor(len(file_list)/2)], file_list[floor(len(file_list)/2):]]
         for l in file_sublists:
             compress_files_upload(l, last_file, rel_path_start, buff_size_threshold, headers, data)
+
+
+def error_print():
+    return '{}. {}, line: {}'.format(sys.exc_info()[0],
+                                     sys.exc_info()[1],
+                                     sys.exc_info()[2].tb_lineno)
