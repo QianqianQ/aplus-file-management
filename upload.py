@@ -1,7 +1,7 @@
 from utils import *
 
 
-def upload_yaml_directory_tar(directory):
+def upload_yaml_directory(directory):
     """ The files bigger than 4M is uploaded one by one, 
         and the smaller files are compressed to around 4M compression files to upload
     
@@ -106,7 +106,7 @@ def upload_yaml_directory_tar(directory):
 def main():
 
     if 'PLUGIN_API' in os.environ and 'PLUGIN_TOKEN' in os.environ and 'PLUGIN_COURSE' in os.environ:
-        upload_yaml_directory_tar(os.getcwd())
+        upload_yaml_directory(os.getcwd())
     else:
         raise ValueError('No API or JWT token provided')
     
